@@ -340,7 +340,8 @@ async function httpOnRequestAsync (server: NodeServer, req: http.IncomingMessage
   try {
     const response = await server.fetch(request, server)
     streamResponse(res, response);
-  } catch {
+  } catch (e) {
+    console.error(e)
     try {
       res.writeHead(500);
       res.end();
@@ -411,10 +412,13 @@ function listen(server: NodeServer): NodeServer {
   return server
 }
 
-export function serve(options?: ServeOptions): Server {
-  const server = NodeServer.fromOptions(options ?? {});
-  listen(server)
-  return server
+const Node = {
+  serve: (options: ServeOptions): Server => {
+    const server = NodeServer.fromOptions(options ?? {});
+    listen(server)
+    return server
+  }
 }
 
+export const serve = typeof Bun !== "undefined" ? Bun.serve : Node.serve
 export default serve;
