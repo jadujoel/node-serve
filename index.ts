@@ -397,7 +397,7 @@ function listen(server: NodeServer): NodeServer {
   const httpServer = http.createServer(onrequest);
   httpServer.on('request', onrequest)
   httpServer.on("error", console.log);
-  httpServer.listen(server.port, () => {
+  httpServer.listen(server.port, server.hostname, () => {
     process.on("SIGINT", () => {
       process.stdout.write("[server] Gracefully shutting down...\r\n");
       const timeout = setTimeout(() => {
