@@ -227,31 +227,7 @@ interface Server extends Required<ServeOptions> {
   id: string
 }
 
-async function httpOnRequestAsync (server: NodeServer, req: http.IncomingMessage, res: http.ServerResponse) {
-  const request = intoRequest(req);
-  server.state.pendingRequests++
-  try {
-    const response = await server.fetch(request, server)
-    streamResponse(res, response);
-  } catch {
-    try {
-      res.writeHead(500);
-      res.end();
-    } catch {}
-  }
-  server.state.pendingRequests--
-}
-
-function onrequestClosure(server: NodeServer) {
-  const httpOnRequestSync: http.RequestListener<typeof http.IncomingMessage, typeof http.ServerResponse> = (req, res) => {
-    httpOnRequestAsync(server, req, res).catch()
-  };
-  return httpOnRequestSync
-}
-
-const defaultFetcher = (request: Request) => {
-  return new Response("404")
-}
+type HttpRequestListener = (req: http.IncomingMessage, res: http.ServerResponse) => void
 
 class NodeServer implements Server {
   constructor(
@@ -328,66 +304,6 @@ class NodeServer implements Server {
   }
 }
 
-function listen(server: NodeServer) {
-  const onrequest = onrequestClosure(server)
-  const httpServer = http.createServer(onrequest);
-  httpServer.on('request', onrequest)
-  httpServer.on("error", console.log);
-  httpServer.listen(server.port, () => {
-    process.on("SIGINT", () => {
-      process.stdout.write("[server] Gracefully shutting down...\r\n");
-      const timeout = setTimeout(() => {
-        process.exit(0);
-      }, 300);
-      httpServer.close(() => {
-        clearTimeout(timeout);
-        process.exit(0);
-      });
-    });
-  });
-  return server
-}
-
-export function serve(options?: ServeOptions): Server {
-  const server = NodeServer.fromOptions(options ?? {});
-  listen(server)
-  return server
-}
-
-const HTDefault = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET",
-    "Access-Control-Allow-Headers": "X-Requested-With,content-type",
-};
-
-const HT = {
-    default: new Headers(HTDefault),
-    json: new Headers({
-        ...HTDefault,
-        "Content-Type": "application/json",
-    }),
-    javascript: new Headers({
-        ...HTDefault,
-        "Content-Type": "application/javascript",
-    }),
-    webm: new Headers({
-        ...HTDefault,
-        "Content-Type": "audio/webm",
-    }),
-    mp4: new Headers({
-        ...HTDefault,
-        "Content-Type": "audio/mp4",
-    }),
-    wav: new Headers({
-        ...HTDefault,
-        "Content-Type": "audio/wav",
-    }),
-    flac: new Headers({
-        ...HTDefault,
-        "Content-Type": "audio/flac",
-    }),
-};
-
 interface SocketAddress {
   /**
    * The IP address of the client.
@@ -409,13 +325,38 @@ class NodeSocketAddress implements SocketAddress {
     public readonly family: "IPv6" | "IPv4",
     public readonly port: number
   ) {}
-  static fromSocket(socket: Socket) {
+  static fromSocket(socket: Socket): NodeSocketAddress {
     return new NodeSocketAddress(
       socket.remoteAddress ?? "",
       socket.remoteFamily === "IPv6" ? "IPv6" : "IPv4",
       socket.remotePort ?? -1
     )
   }
+}
+
+async function httpOnRequestAsync (server: NodeServer, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const request = intoRequest(req);
+  server.state.pendingRequests++
+  try {
+    const response = await server.fetch(request, server)
+    streamResponse(res, response);
+  } catch {
+    try {
+      res.writeHead(500);
+      res.end();
+    } catch {}
+  }
+  server.state.pendingRequests--
+}
+function onrequestClosure(server: NodeServer): HttpRequestListener{
+  const httpOnRequestSync: HttpRequestListener = (req, res) => {
+    httpOnRequestAsync(server, req, res).catch()
+  };
+  return httpOnRequestSync
+}
+
+const defaultFetcher = (request: Request): Response => {
+  return new Response("404")
 }
 
 function intoRequest(message: http.IncomingMessage): Request {
@@ -448,6 +389,32 @@ function streamResponse(res: http.ServerResponse, response: Response): void {
     } else {
       res.end();
     }
+}
+
+function listen(server: NodeServer): NodeServer {
+  const onrequest = onrequestClosure(server)
+  const httpServer = http.createServer(onrequest);
+  httpServer.on('request', onrequest)
+  httpServer.on("error", console.log);
+  httpServer.listen(server.port, () => {
+    process.on("SIGINT", () => {
+      process.stdout.write("[server] Gracefully shutting down...\r\n");
+      const timeout = setTimeout(() => {
+        process.exit(0);
+      }, 300);
+      httpServer.close(() => {
+        clearTimeout(timeout);
+        process.exit(0);
+      });
+    });
+  });
+  return server
+}
+
+export function serve(options?: ServeOptions): Server {
+  const server = NodeServer.fromOptions(options ?? {});
+  listen(server)
+  return server
 }
 
 export default serve;
